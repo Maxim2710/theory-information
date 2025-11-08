@@ -48,7 +48,6 @@ def forward_from_doc(
     p_x_given_y: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Ровно по формулам методички:
 
     (2.4)  p(y_j)      = Σ_i p(x_i) · p(x_i | y_j)
     (2.6)  p(x_i,y_j)  = p(y_j) · p(x_i | y_j)

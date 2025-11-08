@@ -46,7 +46,7 @@ def run_experiments(
     min_correct: float = 0.70,
 ) -> List[RunStats]:
     """
-    Полный цикл ЛР-2 (логирование на русском):
+    Полный цикл ЛР-2:
       a) P(X)               — (2.2)
       b) P(X|Y)             — (2.3), diag ≥ 0.70
       c) P(Y)               — (2.4)
