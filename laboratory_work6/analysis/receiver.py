@@ -1,9 +1,16 @@
+# analysis/receiver.py
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
-from .poly_gf2 import poly_to_str, poly_divmod_verbose, poly_divmod, bits_to_str_from_poly, poly_xor
+from .poly_gf2 import (
+    poly_to_str,
+    poly_divmod_verbose,
+    poly_divmod,
+    bits_to_str_from_poly,
+    poly_xor,
+)
 
 
 @dataclass
@@ -26,35 +33,57 @@ def build_error_table(n: int, g: int) -> Dict[int, int]:
     for pos in range(1, n + 1):
         deg = n - pos
         _, r = poly_divmod(1 << deg, g)
-        print(f"[Rx][Tbl] Позиция ошибки {pos} (слева, степень x^{deg}) → остаток R(x) = {poly_to_str(r)}")
+        print(f"[Rx][Tbl] Позиция {pos} (x^{deg}) → остаток {poly_to_str(r)}")
         table[r] = pos
     return table
 
 
-def receive_and_correct(r_poly: int, n: int, g: int, table: Dict[int, int]) -> ReceiveResult:
-    print("\n=== ПРИЁМНИК: ОПРЕДЕЛЕНИЕ ОШИБКИ И КОРРЕКЦИЯ ===")
-    print(f"[Rx] Принятый код (n бит): {bits_to_str_from_poly(r_poly, n)}")
-    print(f"[Rx] Принятый полином: {poly_to_str(r_poly)}")
+def receive_and_correct(
+    r_poly: int,
+    n: int,
+    g: int,
+    table: Dict[int, int],
+    *,
+    verbose: bool = True,
+) -> ReceiveResult:
+    if verbose:
+        print("\n=== ПРИЁМНИК: ОПРЕДЕЛЕНИЕ ОШИБКИ И КОРРЕКЦИЯ ===")
+        print(f"[Rx] Принятый код (n бит): {bits_to_str_from_poly(r_poly, n)}")
+        print(f"[Rx] Принятый полином: {poly_to_str(r_poly)}")
 
-    _, synd = poly_divmod_verbose(r_poly, g, name_a="Rcv", name_g="P")
-    print(f"\n[Rx] Синдром (остаток) S(x) = Rcv(x) mod P(x) = {poly_to_str(synd)}")
+        _, synd = poly_divmod_verbose(r_poly, g, name_a="Rcv", name_g="P")
+        print(f"\n[Rx] Синдром S(x) = Rcv(x) mod P(x) = {poly_to_str(synd)}")
+    else:
+        _, synd = poly_divmod(r_poly, g)
+        print(f"[Rx] r={bits_to_str_from_poly(r_poly, n)}")
+        print(f"[Rx] S(x)={poly_to_str(synd)}")
 
     if synd == 0:
-        print("[Rx] S(x)=0 → ошибок не обнаружено.")
+        if verbose:
+            print("[Rx] S(x)=0 → ошибок не обнаружено.")
+        else:
+            print("[Rx] ok: no error")
         return ReceiveResult(received_poly=r_poly, syndrome=synd, error_pos=None, corrected_poly=r_poly)
 
     if synd not in table:
-        print("[Rx] Остаток не найден в таблице → ошибка не является однократной (в рамках модели).")
+        if verbose:
+            print("[Rx] Остаток не найден в таблице → ошибка не однократная (в рамках модели).")
+        else:
+            print("[Rx] fail: syndrome not in table")
         return ReceiveResult(received_poly=r_poly, syndrome=synd, error_pos=None, corrected_poly=r_poly)
 
     pos = table[synd]
     deg = n - pos
-    print(f"[Rx] По таблице: S(x) соответствует позиции ошибки pos={pos} (степень x^{deg}).")
-
     e = 1 << deg
     corrected = poly_xor(r_poly, e)
-    print(f"[Rx] Исправление: инвертируем бит в позиции {pos} → добавляем (XOR) полином ошибки e(x)=x^{deg}.")
-    print(f"[Rx] Исправленный полином: {poly_to_str(corrected)}")
-    print(f"[Rx] Исправленный код (n бит): {bits_to_str_from_poly(corrected, n)}")
+
+    if verbose:
+        print(f"[Rx] По таблице: S(x) соответствует позиции pos={pos} (x^{deg}).")
+        print(f"[Rx] Исправление: инвертируем бит в позиции {pos} (XOR с x^{deg}).")
+        print(f"[Rx] Исправленный полином: {poly_to_str(corrected)}")
+        print(f"[Rx] Исправленный код (n бит): {bits_to_str_from_poly(corrected, n)}")
+    else:
+        print(f"[Rx] pos={pos}")
+        print(f"[Rx] c'={bits_to_str_from_poly(corrected, n)}")
 
     return ReceiveResult(received_poly=r_poly, syndrome=synd, error_pos=pos, corrected_poly=corrected)

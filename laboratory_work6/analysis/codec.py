@@ -1,3 +1,4 @@
+# analysis/codec.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,11 +8,20 @@ import numpy as np
 import sympy as sp
 
 from .poly_gf2 import (
-    poly_to_str, bits_to_str_from_poly, poly_mul, poly_divmod_verbose,
-    poly_shift_left, poly_from_bits_str, poly_xor, poly_divmod,
+    poly_to_str,
+    bits_to_str_from_poly,
+    poly_mul,
+    poly_divmod_verbose,
+    poly_shift_left,
+    poly_from_bits_str,
+    poly_xor,
+    poly_divmod,
 )
 from .parameters import (
-    CyclicParameters, variant_to_k, minimal_n_by_formula_6_2, check_hamming_bound
+    CyclicParameters,
+    variant_to_k,
+    minimal_n_by_formula_6_2,
+    check_hamming_bound,
 )
 
 
@@ -30,7 +40,7 @@ def _sympy_poly_to_int(poly: sp.Poly) -> int:
 def _factor_xn_plus_1_over_gf2(n: int) -> List[Tuple[int, int, int]]:
     x = sp.Symbol("x")
     poly = sp.Poly(x**n + 1, x, modulus=2)
-    coeff, factors = poly.factor_list()
+    _, factors = poly.factor_list()
     out: List[Tuple[int, int, int]] = []
     for f, e in factors:
         out.append((int(f.degree()), int(e), _sympy_poly_to_int(f)))
@@ -55,18 +65,16 @@ def _enumerate_generators_degree_p(
                 out.append(poly_val)
             return
         deg, e, f_int = factors[i]
+
         # choose 0..e
-        cur = poly_val
-        rec(i + 1, deg_sum, cur)
+        rec(i + 1, deg_sum, poly_val)
         cur_pow = poly_val
         for m in range(1, e + 1):
             cur_pow = poly_mul(cur_pow, f_int)
             rec(i + 1, deg_sum + m * deg, cur_pow)
 
     rec(0, 0, 1)
-    # remove duplicates
-    uniq = list(dict.fromkeys(out))
-    return uniq
+    return list(dict.fromkeys(out))
 
 
 def _build_syndrome_table(n: int, g: int) -> Dict[int, int]:
@@ -85,7 +93,6 @@ def _build_syndrome_table(n: int, g: int) -> Dict[int, int]:
 
 def _syndrome_table_is_unique(n: int, g: int) -> bool:
     table = _build_syndrome_table(n, g)
-    # need n distinct non-zero remainders (for all positions) and none should be 0
     if len(table) != n:
         return False
     if 0 in table:
@@ -111,13 +118,14 @@ def build_parameters(variant: int) -> CyclicParameters:
     print("\n[Step] Подбор минимальной значности n по формуле (6.2):  2^k ≤ 2^n/(1+n)")
     n0 = minimal_n_by_formula_6_2(k)
     print(f"[Step] Минимальное n, удовлетворяющее (6.2), найдено: n_min = {n0}")
-    print(f"       Проверка: (n+1)·2^k ≤ 2^n  →  ({n0}+1)·2^{k} ≤ 2^{n0}  →  "
-          f"{'ДА' if check_hamming_bound(k, n0) else 'НЕТ'}")
+    print(
+        f"       Проверка: (n+1)·2^k ≤ 2^n  →  ({n0}+1)·2^{k} ≤ 2^{n0}  →  "
+        f"{'ДА' if check_hamming_bound(k, n0) else 'НЕТ'}"
+    )
 
     print("\n[Step] Далее требуется выбрать образующий полином P(x) степени p=n-k,")
     print("       такой что P(x) | (x^n + 1) и таблица остатков для всех позиций ошибки уникальна.")
-    print("       Если для n_min это невозможно (нет подходящего делителя нужной степени / синдромы совпадают),")
-    print("       увеличиваем n на 1 до первого корректного решения (по цели работы: исправление всех однократных ошибок).")
+    print("       Если для n_min это невозможно, увеличиваем n на 1 до первого корректного решения.")
 
     n = n0
     while True:
@@ -125,7 +133,6 @@ def build_parameters(variant: int) -> CyclicParameters:
         print("\n" + "-" * 78)
         print(f"[Try] Пробуем n = {n} → p = n - k = {n} - {k} = {p}")
 
-        # factor x^n + 1 over GF(2)
         print("[Try] Факторизация x^n + 1 над GF(2):")
         factors = _factor_xn_plus_1_over_gf2(n)
         for deg, e, f_int in factors:
@@ -133,14 +140,13 @@ def build_parameters(variant: int) -> CyclicParameters:
 
         print(f"[Try] Перебор всех делителей степени p = {p} (произведения неприводимых факторов).")
         candidates = _enumerate_generators_degree_p(factors, p)
-
         print(f"[Try] Всего кандидатов g(x) степени {p}: {len(candidates)}")
 
         found = None
         for idx, g in enumerate(candidates, start=1):
             print("\n" + "." * 70)
             print(f"[Cand {idx}/{len(candidates)}] g(x) = {poly_to_str(g)}  (deg={p})")
-            # check divisibility: (x^n + 1) mod g == 0
+
             xn1 = (1 << n) | 1
             _, rem = poly_divmod(xn1, g)
             print(f"[Cand] Проверка: (x^{n} + 1) mod g(x) = {poly_to_str(rem)}")
@@ -148,7 +154,7 @@ def build_parameters(variant: int) -> CyclicParameters:
                 print("[Cand] Не делит x^n+1 → отклонён.")
                 continue
 
-            print("[Cand] Строим таблицу остатков для всех позиций ошибки и проверяем уникальность.")
+            print("[Cand] Проверяем уникальность синдромов для всех позиций ошибки.")
             ok = _syndrome_table_is_unique(n, g)
             print(f"[Cand] Уникальные остатки для всех {n} позиций и ни один не равен 0? → {'ДА' if ok else 'НЕТ'}")
             if ok:
@@ -165,7 +171,7 @@ def build_parameters(variant: int) -> CyclicParameters:
             print("=" * 78)
             return CyclicParameters(variant=variant, k=k, n=n, p=p, generator_poly=found)
 
-        print(f"[Try] Для n={n} подходящий P(x) не найден. Увеличиваем n → {n+1}.")
+        print(f"[Try] Для n={n} подходящий P(x) не найден. Увеличиваем n → {n + 1}.")
         n += 1
 
 
@@ -178,7 +184,7 @@ def info_bits_to_poly(info_bits: np.ndarray) -> int:
     return poly_from_bits_str(s)
 
 
-def encode_cyclic(info_bits: np.ndarray, params: CyclicParameters) -> int:
+def encode_cyclic(info_bits: np.ndarray, params: CyclicParameters, *, verbose: bool = True) -> int:
     """
     According to (6.3)-(6.4):
       G(x) from k bits,
@@ -189,27 +195,42 @@ def encode_cyclic(info_bits: np.ndarray, params: CyclicParameters) -> int:
     k, n, p = params.k, params.n, params.p
     g = params.generator_poly
 
-    print("\n=== ПЕРЕДАТЧИК: ПОСТРОЕНИЕ ЦИКЛИЧЕСКОГО КОДА ===")
-    print(f"[Tx] k={k}, n={n}, p={p}")
-    print(f"[Tx] P(x) = {poly_to_str(g)}")
+    info_str = "".join(str(int(b)) for b in info_bits)
 
     G = info_bits_to_poly(info_bits)
-    print(f"[Tx] Информационная комбинация (битовая строка, длина k): {''.join(str(int(b)) for b in info_bits)}")
-    print(f"[Tx] Соответствующий полином G(x): {poly_to_str(G)}")
-
     xpG = poly_shift_left(G, p)
-    print(f"\n[Tx] Умножение на x^p: x^p·G(x), p={p}")
-    print(f"[Tx] x^p·G(x) = {poly_to_str(xpG)}")
 
-    Q, R = poly_divmod_verbose(xpG, g, name_a="x^p·G", name_g="P")
-    print("\n[Tx] По (6.3): x^p·G(x) = P(x)·Q(x) + R(x)")
-    print(f"[Tx] Q(x) = {poly_to_str(Q)}")
-    print(f"[Tx] R(x) = {poly_to_str(R)}")
+    if verbose:
+        print("\n=== ПЕРЕДАТЧИК: ПОСТРОЕНИЕ ЦИКЛИЧЕСКОГО КОДА ===")
+        print(f"[Tx] k={k}, n={n}, p={p}")
+        print(f"[Tx] P(x) = {poly_to_str(g)}")
+        print(f"[Tx] Информационная комбинация (k бит): {info_str}")
+        print(f"[Tx] Полином G(x): {poly_to_str(G)}")
+
+        print(f"\n[Tx] Умножение на x^p: p={p}")
+        print(f"[Tx] x^p·G(x) = {poly_to_str(xpG)}")
+
+        Q, R = poly_divmod_verbose(xpG, g, name_a="x^p·G", name_g="P")
+        print("\n[Tx] По (6.3): x^p·G(x) = P(x)·Q(x) + R(x)")
+        print(f"[Tx] Q(x) = {poly_to_str(Q)}")
+        print(f"[Tx] R(x) = {poly_to_str(R)}")
+    else:
+        # Короткий режим: без деления "в столбик", но с ключевыми артефактами.
+        Q, R = poly_divmod(xpG, g)
+        print(f"[Tx] a={info_str}")
+        print(f"[Tx] G(x)={poly_to_str(G)}")
+        print(f"[Tx] x^p·G(x)={poly_to_str(xpG)}")
+        print(f"[Tx] R(x)={poly_to_str(R)}")
 
     F = poly_xor(xpG, R)
-    print("\n[Tx] По (6.4): F(x) = x^p·G(x) + R(x)  (в GF(2) 'минус' = 'плюс')")
-    print(f"[Tx] F(x) = {poly_to_str(F)}")
-    print(f"[Tx] Кодовая комбинация (n бит): {bits_to_str_from_poly(F, n)}")
-    print(f"     (первые k бит — информационные, последние p бит — проверочные)")
+
+    if verbose:
+        print("\n[Tx] По (6.4): F(x) = x^p·G(x) + R(x)  (в GF(2) 'минус' = 'плюс')")
+        print(f"[Tx] F(x) = {poly_to_str(F)}")
+        print(f"[Tx] Кодовая комбинация (n бит): {bits_to_str_from_poly(F, n)}")
+        print("     (первые k бит — информационные, последние p бит — проверочные)")
+    else:
+        print(f"[Tx] F(x)={poly_to_str(F)}")
+        print(f"[Tx] c={bits_to_str_from_poly(F, n)}")
 
     return F
